@@ -1,0 +1,67 @@
+# Nastavení kalendáře
+# Upravuj v editoru (uv run app.py) nebo ručně; PDF: uv run kalendar.py
+# Při prvním spuštění se tento soubor zkopíruje do kalendar.toml (ten se necommituje).
+
+rok = 2027
+format = "A4"
+barva_svatku = "#B4472F"
+barva_textu = "#2B2B2B"
+pozadi = "zadne"   # zadne | konfety | puntiky | vlny | scrapbook | kresbicky
+
+# Rozložení: "1" celá plocha | "2" dvě nad sebou | "2v" dvě vedle sebe |
+#            "3" velká nahoře + dvě dole | "3v" velká vlevo + dvě vpravo | "4" mřížka 2×2
+# Fotky: "fotky/soubor.jpg" nebo { soubor = "fotky/soubor.jpg", zoom = 1.3, x = 0.4, y = 0.5 }
+
+[titulka]
+nadpis = "2027"
+podnadpis = ""
+rozlozeni = "1"
+fotky = []
+
+[[mesic]]   # leden
+rozlozeni = "1"
+fotky = []
+
+[[mesic]]   # únor
+rozlozeni = "2"
+fotky = []
+
+[[mesic]]   # březen
+rozlozeni = "3"
+fotky = []
+
+[[mesic]]   # duben
+rozlozeni = "4"
+fotky = []
+
+[[mesic]]   # květen
+rozlozeni = "2v"
+fotky = []
+
+[[mesic]]   # červen
+rozlozeni = "3v"
+fotky = []
+
+[[mesic]]   # červenec
+rozlozeni = "1"
+fotky = []
+
+[[mesic]]   # srpen
+rozlozeni = "2"
+fotky = []
+
+[[mesic]]   # září
+rozlozeni = "3"
+fotky = []
+
+[[mesic]]   # říjen
+rozlozeni = "4"
+fotky = []
+
+[[mesic]]   # listopad
+rozlozeni = "2v"
+fotky = []
+
+[[mesic]]   # prosinec
+rozlozeni = "1"
+fotky = []

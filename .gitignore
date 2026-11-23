@@ -1,0 +1,6 @@
+out/
+__pycache__/
+fotky/*
+!fotky/.gitkeep
+# osobní nastavení (fotky, výřezy) – šablona je kalendar.example.toml
+kalendar.toml

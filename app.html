@@ -1,0 +1,557 @@
+<!doctype html>
+<html lang="cs">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Kalendář – editor</title>
+<link rel="icon" href="data:,">
+<style>
+  :root {
+    --bg: #f4f2ee; --panel: #fff; --ink: #2b2b2b; --muted: #8a8680; --line: #e2ded7;
+    --slot: #e8e5e0; --accent: #b4472f; --accent-soft: #f6e6e1; --warn: #c98a12; --edit: #2f6fe0;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font: 14px/1.4 system-ui, "Noto Sans", sans-serif; color: var(--ink); background: var(--bg); }
+  body.dragging, body.dragging * { cursor: grabbing !important; user-select: none; }
+  header { position: sticky; top: 0; z-index: 10; display: flex; gap: 12px; align-items: center;
+    padding: 10px 18px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  header h1 { font: 600 17px/1 "Noto Serif", Georgia, serif; margin: 0 12px 0 0; }
+  header .grow { flex: 1; }
+  #status { color: var(--muted); font-size: 13px; }
+  #status.dirty { color: var(--warn); } #status.err { color: var(--accent); }
+  select { font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); }
+  button { font: inherit; border: 1px solid var(--line); background: var(--panel); border-radius: 7px;
+    padding: 6px 12px; cursor: pointer; }
+  button:hover { border-color: #c9c4bb; }
+  button.primary { background: var(--ink); color: #fff; border-color: var(--ink); }
+  button:disabled { opacity: .5; cursor: progress; }
+  .wrap { display: grid; grid-template-columns: 300px 1fr; min-height: calc(100vh - 53px); }
+  aside { border-right: 1px solid var(--line); background: var(--panel); padding: 14px;
+    position: sticky; top: 53px; height: calc(100vh - 53px); overflow: auto; }
+  aside h2 { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 0 0 8px; }
+  #drop { border: 2px dashed var(--line); border-radius: 10px; padding: 14px; text-align: center; color: var(--muted);
+    margin-bottom: 10px; font-size: 13px; }
+  .over { outline: 3px solid var(--accent) !important; outline-offset: -3px; }
+  .libtools { display: flex; justify-content: space-between; align-items: center; margin: 4px 0 10px; font-size: 13px; color: var(--muted); }
+  #lib { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; border-radius: 8px; min-height: 120px; }
+  .thumb { position: relative; aspect-ratio: 1; border-radius: 6px; overflow: hidden; background: var(--slot);
+    cursor: grab; border: 2px solid transparent; touch-action: none; user-select: none; }
+  .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; pointer-events: none; }
+  .thumb.sel { border-color: var(--accent); }
+  .thumb .used { position: absolute; top: 4px; right: 4px; background: var(--ink); color: #fff; font-size: 11px;
+    border-radius: 9px; padding: 0 6px; }
+  .thumb .nm { position: absolute; left: 0; right: 0; bottom: 0; font-size: 10px; color: #fff; padding: 8px 4px 2px;
+    background: linear-gradient(transparent, rgba(0,0,0,.55)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  main { padding: 18px; }
+  .hint { color: var(--muted); font-size: 13px; margin: 0 0 14px; max-width: 980px; }
+  .hint b { color: var(--ink); font-weight: 600; }
+  #pages { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 18px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+  .card h3 { margin: 0; font: 600 15px/1.2 "Noto Serif", Georgia, serif; }
+  .cardhead { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .count { font-size: 12px; color: var(--muted); }
+  .cardhead .left { display: flex; align-items: center; gap: 6px; }
+  .handle { cursor: grab; color: var(--muted); font-size: 16px; line-height: 1; padding: 2px 3px; border-radius: 4px;
+    touch-action: none; user-select: none; }
+  .handle:hover { background: #f0ede8; color: var(--ink); }
+  .move { display: flex; gap: 2px; }
+  .move button { padding: 0 6px; font-size: 12px; line-height: 20px; color: var(--muted); }
+  .card.over { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .card.dragsrc { opacity: .45; }
+  #ghost .lbl { display: none; width: 100%; height: 100%; align-items: center; justify-content: center; background: var(--ink);
+    color: #fff; font: 600 13px/1.2 "Noto Serif", Georgia, serif; text-align: center; padding: 6px; }
+  #ghost.text .lbl { display: flex; } #ghost.text img { display: none; }
+  .layouts { display: flex; gap: 4px; margin-bottom: 8px; }
+  .layouts button { padding: 3px; border-radius: 5px; line-height: 0; }
+  .layouts button.on { border-color: var(--ink); background: #f0ede8; }
+  .layouts svg rect { fill: #cfcac2; }
+  .layouts button.on svg rect { fill: var(--ink); }
+  .page { position: relative; width: 100%; aspect-ratio: 210 / 297; background: #fff 0 0 / 100% 100%; border: 1px solid var(--line);
+    box-shadow: 0 1px 3px rgba(0,0,0,.06); container-type: inline-size; }
+  .page .over-layer { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; }
+  .slot { position: absolute; background: var(--slot); overflow: hidden; display: flex; align-items: center;
+    justify-content: center; color: var(--muted); font-size: 11px; cursor: pointer; touch-action: none; user-select: none; }
+  .slot .ph { position: absolute; max-width: none; pointer-events: none; display: block; }
+  .slot.filled { cursor: grab; }
+  .slot.editing { outline: 3px solid var(--edit); outline-offset: -3px; cursor: move; z-index: 3; overflow: hidden; }
+  .slot .tools { position: absolute; top: 3px; right: 3px; display: none; gap: 3px; z-index: 4; }
+  .slot.filled:hover .tools, .slot.editing .tools { display: flex; }
+  .slot .tools button { width: 22px; height: 22px; border-radius: 11px; border: 0; padding: 0; background: rgba(0,0,0,.62);
+    color: #fff; font-size: 13px; line-height: 22px; }
+  .slot .tools button:hover { background: rgba(0,0,0,.85); }
+  .slot .tools .zoom { display: none; }
+  .slot.editing .tools .zoom { display: block; }
+  .slot .dpi { position: absolute; left: 3px; bottom: 3px; background: var(--warn); color: #fff; font-size: 10px;
+    border-radius: 4px; padding: 0 4px; z-index: 4; }
+  .slot .zl { position: absolute; right: 3px; bottom: 3px; background: var(--edit); color: #fff; font-size: 10px;
+    border-radius: 4px; padding: 0 4px; z-index: 4; }
+  .slot .num { position: absolute; left: 4px; top: 2px; font-size: 10px; }
+  .mname { position: absolute; font: 700 2.9cqw/1 "Noto Serif", Georgia, serif; }
+  .myear { position: absolute; font: 2.9cqw/1 "Noto Serif", Georgia, serif; color: var(--muted); }
+  .gridline { position: absolute; height: 1px; background: var(--line); }
+  .ctitle { position: absolute; left: 0; right: 0; text-align: center; font: 700 9cqw/1 "Noto Serif", Georgia, serif; }
+  .csub { position: absolute; left: 0; right: 0; text-align: center; font: 2.4cqw/1 "Noto Serif", Georgia, serif; color: var(--muted); }
+  .coverfields { display: grid; gap: 4px; margin-top: 8px; }
+  .coverfields input { font: inherit; padding: 5px 8px; border: 1px solid var(--line); border-radius: 6px; }
+  #ghost { position: fixed; z-index: 50; width: 90px; height: 90px; border-radius: 8px; overflow: hidden; pointer-events: none;
+    box-shadow: 0 6px 20px rgba(0,0,0,.3); display: none; transform: translate(-50%, -50%) rotate(-3deg); opacity: .9; }
+  #ghost img { width: 100%; height: 100%; object-fit: cover; }
+  #log { position: fixed; right: 18px; bottom: 18px; max-width: 520px; background: var(--ink); color: #fff;
+    border-radius: 10px; padding: 12px 14px; font: 12px/1.5 ui-monospace, monospace; white-space: pre-wrap; display: none; z-index: 20; }
+  #log a { color: #ffd9cf; }
+  #log .close { float: right; cursor: pointer; margin-left: 10px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Kalendář <span id="year"></span></h1>
+  <span id="status">Načítám…</span>
+  <span class="grow"></span>
+  <label>Pozadí:
+    <select id="pozadi">
+      <option value="zadne">žádné (bílé)</option><option value="konfety">konfety</option>
+      <option value="puntiky">puntíky</option><option value="vlny">vlny</option>
+      <option value="scrapbook">scrapbook</option><option value="kresbicky">kresbičky</option>
+    </select></label>
+  <button id="build" class="primary">Vygenerovat PDF</button>
+</header>
+<div class="wrap">
+  <aside>
+    <h2>Fotky</h2>
+    <div id="drop">Přetáhni sem fotky z počítače<br>(uloží se do složky <b>fotky/</b>)</div>
+    <div class="libtools">
+      <label><input type="checkbox" id="unused"> jen nepoužité</label>
+      <span id="libcount"></span>
+    </div>
+    <div id="lib"></div>
+  </aside>
+  <main>
+    <p class="hint"><b>Vložení:</b> přetáhni fotku z knihovny do rámečku (nebo klikni na fotku a pak na rámeček).
+      <b>Přesun:</b> přetáhni fotku na jiný rámeček (prohodí se), zpět do knihovny = odebrat.
+      <b>Ořez:</b> klikni na vloženou fotku – pak ji tažením posuneš, kolečkem myši nebo tlačítky +/− přiblížíš, ⟲ vrátí výchozí.
+      Esc nebo klik mimo ukončí úpravu.
+      <b>Pořadí měsíců:</b> chyť stránku za ⠿ a pusť ji na jiný měsíc (ostatní se posunou), nebo použij ‹ ›. Ukládá se automaticky.</p>
+    <div id="pages"></div>
+  </main>
+</div>
+<div id="ghost"><img alt=""><div class="lbl"></div></div>
+<div id="log"></div>
+
+<script>
+const S = { config: null, photos: [], geo: null, selected: null, editing: null };
+const ZMIN = 1, ZMAX = 4;
+const $ = (s, el = document) => el.querySelector(s);
+const h = (tag, attrs = {}, ...kids) => {
+  const el = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs)) {
+    if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
+    else if (k === 'class') el.className = v;
+    else if (k === 'style') el.style.cssText = v;
+    else el.setAttribute(k, v);
+  }
+  for (const kid of kids.flat()) if (kid != null) el.append(kid);
+  return el;
+};
+const thumbUrl = n => '/thumb/' + encodeURIComponent(n);
+const photoByName = n => S.photos.find(p => p.name === n);
+const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
+
+// ---------- ukládání ----------
+let saveTimer = null;
+function setStatus(text, cls = '') { const s = $('#status'); s.textContent = text; s.className = cls; }
+function scheduleSave(delay = 400) {
+  setStatus('Neuloženo…', 'dirty');
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(save, delay);
+}
+function changed() { scheduleSave(); render(); }
+async function save() {
+  try {
+    const r = await fetch('/api/save', { method: 'POST', body: JSON.stringify(S.config) });
+    const j = await r.json();
+    if (!r.ok) throw new Error(j.error);
+    setStatus('Uloženo ✓');
+  } catch (e) { setStatus('Chyba ukládání: ' + e.message, 'err'); }
+}
+
+// ---------- model: položka = '' nebo {name, zoom, x, y} ----------
+const slotsFor = pi => (pi === 0 ? S.geo.cover : S.geo.month)[S.config.pages[pi].layout];
+const entry = (pi, si) => S.config.pages[pi].photos[si] || null;
+function setEntry(pi, si, e) {
+  const ph = S.config.pages[pi].photos;
+  while (ph.length <= si) ph.push('');
+  ph[si] = e || '';
+  while (ph.length && !ph[ph.length - 1]) ph.pop();
+}
+const newEntry = name => ({ name, zoom: 1, x: 0.5, y: 0.5 });
+function usage() {
+  const u = {};
+  S.config.pages.forEach((p, pi) => p.photos.slice(0, slotsFor(pi).length)
+    .forEach(e => { if (e) u[e.name] = (u[e.name] || 0) + 1; }));
+  return u;
+}
+
+// geometrie výřezu – stejný výpočet jako v kalendar.py
+function cropGeom(e, photo, bw, bh) {
+  const ar = photo.w / photo.h;
+  let dw, dh;
+  if (ar > bw / bh) { dh = bh * e.zoom; dw = dh * ar; } else { dw = bw * e.zoom; dh = dw / ar; }
+  const hx = bw / (2 * dw), hy = bh / (2 * dh);           // polovina výřezu jako podíl obrázku
+  e.x = clamp(e.x, hx, 1 - hx); e.y = clamp(e.y, hy, 1 - hy);
+  return { dw, dh, left: bw / 2 - e.x * dw, top: bh / 2 - e.y * dh };
+}
+function effDpi(e, photo, bw, bh) {
+  const g = cropGeom({ ...e }, photo, bw, bh);
+  return Math.round(photo.w * (bw / g.dw) / (bw / 25.4));
+}
+
+// ---------- nahrávání ----------
+async function uploadFiles(files) {
+  const names = [];
+  for (const f of files) {
+    if (!/\.(jpe?g|png|webp)$/i.test(f.name)) { setStatus('Přeskočeno (formát): ' + f.name, 'err'); continue; }
+    setStatus(`Nahrávám ${f.name}…`, 'dirty');
+    const r = await fetch('/api/upload?name=' + encodeURIComponent(f.name), { method: 'POST', body: f });
+    const j = await r.json();
+    if (r.ok) names.push(j.name); else setStatus(j.error, 'err');
+  }
+  const r = await fetch('/api/state'); S.photos = (await r.json()).photos;
+  setStatus(names.length ? `Nahráno ${names.length} fotek` : $('#status').textContent);
+  render();
+  return names;
+}
+
+// ---------- vlastní přetahování (pointer events – funguje i ve Firefoxu) ----------
+let drag = null;   // {kind: 'photo'|'slot'|'pan', ...}
+const DRAG_THRESHOLD = 5;
+
+function startPointer(e, info) {
+  if (e.button !== 0) return;
+  e.preventDefault();
+  drag = { ...info, x0: e.clientX, y0: e.clientY, moved: false };
+  window.addEventListener('pointermove', onMove);
+  window.addEventListener('pointerup', onUp, { once: true });
+}
+function targetAt(x, y) {
+  const el = document.elementFromPoint(x, y);
+  if (!el) return null;
+  if (drag?.kind === 'page') {
+    const card = el.closest('.card[data-pi]');
+    return card && +card.dataset.pi > 0 ? { card: +card.dataset.pi, el: card } : null;
+  }
+  const slot = el.closest('.slot');
+  if (slot) return { slot: { pi: +slot.dataset.pi, si: +slot.dataset.si }, el: slot };
+  const lib = el.closest('#lib, aside');
+  if (lib) return { lib: true, el: $('#lib') };
+  return null;
+}
+let overEl = null;
+function setOver(el) { if (overEl !== el) { overEl?.classList.remove('over'); overEl = el; el?.classList.add('over'); } }
+
+function onMove(e) {
+  if (!drag) return;
+  const dx = e.clientX - drag.x0, dy = e.clientY - drag.y0;
+  if (!drag.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD) return;
+  drag.moved = true;
+  if (drag.kind === 'pan') {
+    const { pi, si, el, startX, startY } = drag;
+    const e2 = entry(pi, si), photo = photoByName(e2.name);
+    const [, , bw, bh] = slotsFor(pi)[si];
+    const g = cropGeom(e2, photo, bw, bh);
+    const pxPerMm = el.clientWidth / bw;
+    e2.x = startX - dx / (g.dw * pxPerMm);
+    e2.y = startY - dy / (g.dh * pxPerMm);
+    paintSlotImage(el, pi, si);
+    return;
+  }
+  document.body.classList.add('dragging');
+  const ghost = $('#ghost');
+  ghost.style.display = 'block';
+  ghost.style.left = e.clientX + 'px'; ghost.style.top = e.clientY + 'px';
+  if (drag.kind === 'page') {
+    const first = S.config.pages[drag.pi].photos.find(Boolean);
+    ghost.classList.toggle('text', !first);
+    if (first) $('img', ghost).src = thumbUrl(first.name);
+    $('.lbl', ghost).textContent = S.geo.months[drag.pi - 1];
+  } else {
+    ghost.classList.remove('text');
+    $('img', ghost).src = thumbUrl(drag.name);
+  }
+  document.querySelector(`.card[data-pi="${drag.pi}"]`)?.classList.toggle('dragsrc', drag.kind === 'page');
+  const t = targetAt(e.clientX, e.clientY);
+  setOver(t ? t.el : null);
+}
+
+function onUp(e) {
+  window.removeEventListener('pointermove', onMove);
+  document.body.classList.remove('dragging');
+  $('#ghost').style.display = 'none';
+  setOver(null);
+  const d = drag; drag = null;
+  if (!d) return;
+  if (d.kind === 'pan') { if (d.moved) scheduleSave(); return; }
+  if (!d.moved) { d.onClick?.(); return; }
+  document.querySelectorAll('.card.dragsrc').forEach(c => c.classList.remove('dragsrc'));
+  drag = d; const t = targetAt(e.clientX, e.clientY); drag = null;
+  if (!t) return;
+  if (d.kind === 'page') { movePage(d.pi, t.card); return; }
+  if (d.kind === 'photo' && t.slot) {
+    setEntry(t.slot.pi, t.slot.si, newEntry(d.name));
+    S.editing = null; changed();
+  } else if (d.kind === 'slot') {
+    if (t.slot) {
+      if (t.slot.pi === d.pi && t.slot.si === d.si) return;
+      const a = entry(d.pi, d.si), b = entry(t.slot.pi, t.slot.si);
+      setEntry(t.slot.pi, t.slot.si, a ? { ...a, zoom: 1, x: .5, y: .5 } : '');
+      setEntry(d.pi, d.si, b ? { ...b, zoom: 1, x: .5, y: .5 } : '');
+    } else if (t.lib) {
+      setEntry(d.pi, d.si, '');
+    }
+    S.editing = null; changed();
+  }
+}
+
+// přesun obsahu stránky (rozložení + fotky) na jiný měsíc; ostatní měsíce se posunou
+function movePage(from, to) {
+  if (from === to || from < 1 || to < 1 || from > 12 || to > 12) return;
+  const pages = S.config.pages;
+  const [moved] = pages.splice(from, 1);
+  pages.splice(to, 0, moved);
+  S.editing = null;
+  changed();
+  setStatus(`${S.geo.months[from - 1]} → ${S.geo.months[to - 1]}`, 'dirty');
+}
+
+// soubory z počítače – nativní drag & drop
+function fileDropTarget(el, onFiles) {
+  el.addEventListener('dragover', e => { if (e.dataTransfer.types.includes('Files')) { e.preventDefault(); el.classList.add('over'); } });
+  el.addEventListener('dragleave', () => el.classList.remove('over'));
+  el.addEventListener('drop', e => {
+    el.classList.remove('over');
+    if (!e.dataTransfer.files.length) return;
+    e.preventDefault(); e.stopPropagation();
+    onFiles([...e.dataTransfer.files]);
+  });
+}
+window.addEventListener('dragover', e => e.preventDefault());
+window.addEventListener('drop', e => e.preventDefault());
+
+// ---------- úprava výřezu ----------
+const isEditing = (pi, si) => S.editing && S.editing.pi === pi && S.editing.si === si;
+function zoomBy(pi, si, factor) {
+  const e = entry(pi, si); if (!e) return;
+  e.zoom = clamp(+(e.zoom * factor).toFixed(3), ZMIN, ZMAX);
+  const el = document.querySelector(`.slot[data-pi="${pi}"][data-si="${si}"]`);
+  if (el) paintSlotImage(el, pi, si);
+  scheduleSave();
+}
+function paintSlotImage(el, pi, si) {
+  const e = entry(pi, si), photo = e && photoByName(e.name);
+  const img = $('.ph', el);
+  if (!photo || !img) return;
+  const [, , bw, bh] = slotsFor(pi)[si];
+  const g = cropGeom(e, photo, bw, bh);
+  img.style.width = (g.dw / bw * 100) + '%';
+  img.style.height = (g.dh / bh * 100) + '%';
+  img.style.left = (g.left / bw * 100) + '%';
+  img.style.top = (g.top / bh * 100) + '%';
+  const dpi = effDpi(e, photo, bw, bh);
+  const badge = $('.dpi', el);
+  if (dpi < 200) {
+    const b = badge || el.appendChild(h('span', { class: 'dpi', title: 'Efektivní rozlišení v tisku; ideál 300 dpi' }));
+    b.textContent = `~${dpi} dpi`;
+  } else badge?.remove();
+  const zl = $('.zl', el);
+  if (e.zoom > 1.001) (zl || el.appendChild(h('span', { class: 'zl' }))).textContent = `${Math.round(e.zoom * 100)} %`;
+  else zl?.remove();
+}
+
+// ---------- vykreslení ----------
+function layoutIcon(boxes, trimH) {
+  const ns = 'http://www.w3.org/2000/svg';
+  const svg = document.createElementNS(ns, 'svg');
+  svg.setAttribute('width', 26); svg.setAttribute('height', 26);
+  svg.setAttribute('viewBox', `12 14 186 ${trimH}`);
+  for (const [x, y, w, hh] of boxes) {
+    const r = document.createElementNS(ns, 'rect');
+    r.setAttribute('x', x); r.setAttribute('y', y); r.setAttribute('width', w); r.setAttribute('height', hh);
+    svg.append(r);
+  }
+  return svg;
+}
+
+function renderLibrary() {
+  const u = usage(), onlyUnused = $('#unused').checked;
+  const lib = $('#lib'); lib.replaceChildren();
+  $('#libcount').textContent = `${S.photos.length} fotek · ${Object.keys(u).length} použito`;
+  for (const p of S.photos.filter(p => !onlyUnused || !u[p.name])) {
+    const el = h('div', { class: 'thumb' + (S.selected === p.name ? ' sel' : ''), title: `${p.name}\n${p.w} × ${p.h} px` },
+      h('img', { src: thumbUrl(p.name), loading: 'lazy', alt: '', draggable: 'false' }),
+      u[p.name] ? h('span', { class: 'used' }, '×' + u[p.name]) : null,
+      h('span', { class: 'nm' }, p.name));
+    el.addEventListener('pointerdown', e => startPointer(e, { kind: 'photo', name: p.name,
+      onClick: () => { S.selected = S.selected === p.name ? null : p.name; S.editing = null; render(); } }));
+    lib.append(el);
+  }
+  if (!S.photos.length) lib.append(h('p', { class: 'hint', style: 'grid-column: 1/-1' }, 'Zatím žádné fotky.'));
+}
+
+function renderPage(pi) {
+  const g = S.geo, page = S.config.pages[pi], isCover = pi === 0;
+  const [TW, TH] = g.trim;
+  const pct = (v, total) => (v / total * 100) + '%';
+  const boxes = slotsFor(pi);
+  const pg = h('div', { class: 'page' });
+  const styl = S.config.pozadi || 'zadne';
+  if (styl !== 'zadne') {
+    const q = `styl=${styl}&page=${pi}&layout=${encodeURIComponent(page.layout)}&sub=${isCover && S.config.podnadpis ? 1 : 0}`;
+    pg.style.backgroundImage = `url(/bg?${q}&phase=under)`;
+    if (styl === 'scrapbook') pg.append(h('img', { class: 'over-layer', src: `/bg?${q}&phase=over`, alt: '' }));
+  }
+
+  boxes.forEach(([x, y, w, hh], si) => {
+    const e = entry(pi, si), photo = e ? photoByName(e.name) : null;
+    const editing = isEditing(pi, si);
+    const slot = h('div', { class: 'slot' + (e ? ' filled' : '') + (editing ? ' editing' : ''),
+      'data-pi': pi, 'data-si': si,
+      style: `left:${pct(x, TW)};top:${pct(y, TH)};width:${pct(w, TW)};height:${pct(hh, TH)}` });
+    if (e) {
+      if (photo) slot.append(h('img', { class: 'ph', src: thumbUrl(e.name), alt: '', draggable: 'false' }));
+      else slot.append(h('span', {}, '⚠ chybí ' + e.name));
+      const btn = (cls, label, title, fn) => {
+        const b = h('button', { class: cls, title }, label);
+        b.addEventListener('pointerdown', ev => ev.stopPropagation());
+        b.addEventListener('click', ev => { ev.stopPropagation(); fn(); });
+        return b;
+      };
+      slot.append(h('div', { class: 'tools' },
+        btn('zoom', '−', 'Oddálit', () => zoomBy(pi, si, 1 / 1.15)),
+        btn('zoom', '+', 'Přiblížit', () => zoomBy(pi, si, 1.15)),
+        btn('zoom', '⟲', 'Výchozí ořez', () => { Object.assign(e, { zoom: 1, x: .5, y: .5 }); paintSlotImage(slot, pi, si); scheduleSave(); }),
+        btn('', '×', 'Odebrat', () => { setEntry(pi, si, ''); S.editing = null; changed(); })));
+      slot.addEventListener('pointerdown', ev => {
+        if (S.selected) return;  // klik vloží vybranou fotku (viz onClick níže)
+        if (isEditing(pi, si) && photo) {
+          startPointer(ev, { kind: 'pan', pi, si, el: slot, startX: e.x, startY: e.y });
+        } else {
+          startPointer(ev, { kind: 'slot', pi, si, name: e.name,
+            onClick: () => { S.editing = { pi, si }; render(); } });
+        }
+      });
+      slot.addEventListener('wheel', ev => {
+        if (!isEditing(pi, si)) return;
+        ev.preventDefault();
+        zoomBy(pi, si, ev.deltaY < 0 ? 1.08 : 1 / 1.08);
+      }, { passive: false });
+    } else {
+      slot.append(h('span', {}, S.selected ? 'klikni = vložit' : '+ foto'));
+      if (boxes.length > 1) slot.append(h('span', { class: 'num' }, si + 1));
+    }
+    slot.addEventListener('click', () => {
+      if (S.selected) { setEntry(pi, si, newEntry(S.selected)); changed(); }
+    });
+    fileDropTarget(slot, async files => {
+      const names = await uploadFiles(files);
+      const n = boxes.length;
+      const targets = [si, ...[...Array(n).keys()].filter(i => i !== si && !entry(pi, i))];
+      names.slice(0, targets.length).forEach((name, k) => setEntry(pi, targets[k], newEntry(name)));
+      changed();
+    });
+    pg.append(slot);
+    if (e && photo) paintSlotImage(slot, pi, si);
+  });
+
+  if (isCover) {
+    pg.append(h('div', { class: 'ctitle', style: `top:${pct(251, TH)}` }, S.config.nadpis || ''));
+    if (S.config.podnadpis) pg.append(h('div', { class: 'csub', style: `top:${pct(274, TH)}` }, S.config.podnadpis));
+  } else {
+    const top = pct(g.header - 5, TH);
+    pg.append(h('div', { class: 'mname', style: `left:${pct(g.margin, TW)};top:${top}` }, g.months[pi - 1]));
+    pg.append(h('div', { class: 'myear', style: `right:${pct(g.margin, TW)};top:${top}` }, S.config.rok));
+    for (let r = 0; r <= 5; r++)
+      pg.append(h('div', { class: 'gridline', style: `left:${pct(g.margin, TW)};right:${pct(g.margin, TW)};top:${pct(g.gridTop + r * g.rowH, TH)}` }));
+  }
+
+  const used = page.photos.slice(0, boxes.length).filter(Boolean).length;
+  let left;
+  if (isCover) left = h('div', { class: 'left' }, h('h3', {}, 'Titulka'));
+  else {
+    const handle = h('span', { class: 'handle', title: 'Přetáhni na jiný měsíc' }, '⠿');
+    handle.addEventListener('pointerdown', ev => startPointer(ev, { kind: 'page', pi }));
+    left = h('div', { class: 'left' }, handle, h('h3', {}, g.months[pi - 1]));
+  }
+  const right = h('div', { class: 'left' }, h('span', { class: 'count' }, `${used}/${boxes.length}`));
+  if (!isCover) right.append(h('div', { class: 'move' },
+    h('button', { title: 'Posunout na předchozí měsíc', onclick: () => movePage(pi, pi - 1), ...(pi === 1 ? { disabled: '' } : {}) }, '‹'),
+    h('button', { title: 'Posunout na další měsíc', onclick: () => movePage(pi, pi + 1), ...(pi === 12 ? { disabled: '' } : {}) }, '›')));
+  const card = h('div', { class: 'card', 'data-pi': pi },
+    h('div', { class: 'cardhead' }, left, right),
+    h('div', { class: 'layouts' }, g.layouts.map(l => h('button', {
+      class: l === page.layout ? 'on' : '', title: 'Rozložení ' + l,
+      onclick: () => { page.layout = l; S.editing = null; changed(); } }, layoutIcon((isCover ? g.cover : g.month)[l], isCover ? 230 : 175)))),
+    pg);
+
+  if (isCover) {
+    card.append(h('div', { class: 'coverfields' },
+      h('input', { value: S.config.nadpis, placeholder: 'Nadpis', oninput: e => { S.config.nadpis = e.target.value; changedSoft(); } }),
+      h('input', { value: S.config.podnadpis, placeholder: 'Podnadpis (nepovinné)', oninput: e => { S.config.podnadpis = e.target.value; changedSoft(); } })));
+  }
+  return card;
+}
+
+// změna textu bez překreslení inputu (aby neztratil fokus)
+let softTimer = null;
+function changedSoft() {
+  scheduleSave(600);
+  clearTimeout(softTimer); softTimer = setTimeout(() => {
+    const c = $('#pages').firstChild, fresh = renderPage(0);
+    c.replaceChild(fresh.querySelector('.page'), c.querySelector('.page'));
+  }, 300);
+}
+
+function render() {
+  renderLibrary();
+  const pages = $('#pages'); pages.replaceChildren();
+  S.config.pages.forEach((_, pi) => pages.append(renderPage(pi)));
+}
+
+// ---------- start ----------
+async function init() {
+  const r = await fetch('/api/state'); const j = await r.json();
+  S.config = j.config; S.photos = j.photos; S.geo = j.geometry;
+  $('#year').textContent = S.config.rok;
+  $('#pozadi').value = S.config.pozadi || 'zadne';
+  setStatus('Uloženo ✓');
+  render();
+}
+
+fileDropTarget($('#drop'), uploadFiles);
+fileDropTarget($('#lib'), uploadFiles);
+$('#unused').addEventListener('change', render);
+$('#pozadi').addEventListener('change', e => { S.config.pozadi = e.target.value; changed(); });
+document.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  if (S.selected || S.editing) { S.selected = null; S.editing = null; render(); }
+});
+// klik mimo upravovanou fotku ukončí úpravu
+document.addEventListener('pointerdown', e => {
+  if (S.editing && !e.target.closest('.slot.editing')) { S.editing = null; setTimeout(render, 0); }
+}, true);
+
+$('#build').addEventListener('click', async () => {
+  const b = $('#build'); b.disabled = true; b.textContent = 'Generuji…';
+  clearTimeout(saveTimer); await save();
+  try {
+    const r = await fetch('/api/build', { method: 'POST' }); const j = await r.json();
+    const log = $('#log'); log.style.display = 'block';
+    log.innerHTML = '<span class="close">✕</span>';
+    log.append(j.log || j.error || '');
+    log.insertAdjacentHTML('beforeend', `\n<a href="/out/kalendar-${S.config.rok}-nahled.pdf" target="_blank">Otevřít náhled s vodítky</a> · <a href="/out/kalendar-${S.config.rok}.pdf" target="_blank">Tiskové PDF</a>`);
+    $('.close', log).onclick = () => log.style.display = 'none';
+  } finally { b.disabled = false; b.textContent = 'Vygenerovat PDF'; }
+});
+
+init();
+</script>
+</body>
+</html>
